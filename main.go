@@ -17,32 +17,35 @@ import (
 	"path/filepath"
 )
 
-func FilePathWalkDir(root string) ([]string, error) {
-	var files []string
+func filePathWalkDir(root string, c chan string) error {
 	err := filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
 		if !info.IsDir() {
-			files = append(files, path)
+			c <- path
 		}
 		return nil
 	})
-	return files, err
+	close(c)
+	return err
 }
 
-func readFile(path string) {
+func readFile(c chan string) {
 	var lines []string
-	file, err := os.Open(path)
-	if err != nil {
-		log.Fatalf("failed opening file: %s", err)
-	}
-	scanner := bufio.NewScanner(file)
-	scanner.Split(bufio.ScanLines)
-	for scanner.Scan() {
-		lines = append(lines, scanner.Text())
-	}
-	file.Close()
+	for i := range c {
+		file, err := os.Open(i)
+		fmt.Println(i)
+		if err != nil {
+			log.Fatalf("failed opening file: %s", err)
+		}
+		scanner := bufio.NewScanner(file)
+		scanner.Split(bufio.ScanLines)
+		for scanner.Scan() {
+			lines = append(lines, scanner.Text())
+		}
+		file.Close()
 
-	for _, eachline := range lines {
-		fmt.Println(eachline)
+		for _, eachline := range lines {
+			fmt.Println(eachline)
+		}
 	}
 }
 
@@ -62,8 +65,7 @@ func readFile(path string) {
 
 func main() {
 
-	fileCh := make(chan string, 100)
-	lineCh := make(chan string, 100)
+	fileChan := make(chan string, 100)
 
 	var root string
 	if len(os.Args) == 1 {
@@ -77,12 +79,10 @@ func main() {
 	}
 
 	// filepath.Walk
-	files, err := FilePathWalkDir(root)
+	err := filePathWalkDir(root, fileChan)
 	if err != nil {
 		panic(err)
 	}
 
-	for _, file := range files {
-		readFile(file)
-	}
+	readFile(fileChan)
 }

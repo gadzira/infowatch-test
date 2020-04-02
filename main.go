@@ -12,9 +12,12 @@ package main
 import (
 	"bufio"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
+	"sync"
 )
 
 func filePathWalkDir(root string, c chan string) error {
@@ -28,11 +31,10 @@ func filePathWalkDir(root string, c chan string) error {
 	return err
 }
 
-func readFile(c chan string) {
+func readFile(c chan string, l chan string, waitgroup *sync.WaitGroup) {
 	var lines []string
 	for i := range c {
 		file, err := os.Open(i)
-		fmt.Println(i)
 		if err != nil {
 			log.Fatalf("failed opening file: %s", err)
 		}
@@ -44,28 +46,48 @@ func readFile(c chan string) {
 		file.Close()
 
 		for _, eachline := range lines {
-			fmt.Println(eachline)
+			l <- eachline
 		}
 	}
+	close(l)
+	waitgroup.Done()
 }
 
-// goal: add every symbol to map
-// r := bufio.NewReader(strings.NewReader(text))
-// for {
-// if c, _, err := r.ReadRune(); err != nil {
-// if err == io.EOF {
-// break
-// } else {
-// log.Fatal(err)
-// }
-// } else {
-// fmt.Println(string(c))
-// }
-// }
+func sortChars(l chan string, waitgroup *sync.WaitGroup) map[string]int {
+	sourceMap := make(map[string]int)
+	for i := range l {
+		r := bufio.NewReader(strings.NewReader(i))
+		for {
+			if c, _, err := r.ReadRune(); err != nil {
+				if err == io.EOF {
+					break
+				} else {
+					log.Fatal(err)
+				}
+			} else {
+				sc := string(c)
+				if _, found := sourceMap[sc]; found {
+					sourceMap[sc]++
+				} else {
+					sourceMap[sc] = 1
+				}
+			}
+		}
+	}
+	// for test
+	for k, v := range sourceMap {
+		fmt.Printf("[%s] : %d\n", k, v)
+	}
+	waitgroup.Done()
+	return sourceMap
+}
 
 func main() {
 
 	fileChan := make(chan string, 100)
+	lineChan := make(chan string, 100)
+
+	var waitgroup sync.WaitGroup
 
 	var root string
 	if len(os.Args) == 1 {
@@ -78,11 +100,13 @@ func main() {
 		return
 	}
 
-	// filepath.Walk
 	err := filePathWalkDir(root, fileChan)
 	if err != nil {
 		panic(err)
 	}
 
-	readFile(fileChan)
+	waitgroup.Add(2)
+	go readFile(fileChan, lineChan, &waitgroup)
+	go sortChars(lineChan, &waitgroup)
+	waitgroup.Wait()
 }

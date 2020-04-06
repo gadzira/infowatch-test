@@ -1,14 +1,5 @@
 package main
 
-// 1. Собрать список файлов +
-// 2. Открыть файл +
-// 3. Создать мапу куда заносить новый символ или обновлять значение существующего
-// 4. После закрытия файла отрисовать гистогрмму
-
-// get full path to file -> send result to channel ->
-// read file line by line and send to channel ->
-// scan every line and add symbol to map as key and iterate value
-
 import (
 	"bufio"
 	"fmt"
@@ -18,6 +9,8 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+
+	"github.com/chenjiandongx/go-echarts/charts"
 )
 
 func filePathWalkDir(root string, c chan string) error {
@@ -53,7 +46,7 @@ func readFile(c chan string, l chan string, waitgroup *sync.WaitGroup) {
 	waitgroup.Done()
 }
 
-func sortChars(l chan string, waitgroup *sync.WaitGroup) map[string]int {
+func sortChars(l chan string, m chan map[string]int, waitgroup *sync.WaitGroup) map[string]int {
 	sourceMap := make(map[string]int)
 	for i := range l {
 		r := bufio.NewReader(strings.NewReader(i))
@@ -74,18 +67,50 @@ func sortChars(l chan string, waitgroup *sync.WaitGroup) map[string]int {
 			}
 		}
 	}
+	m <- sourceMap
 	// for test
-	for k, v := range sourceMap {
-		fmt.Printf("[%s] : %d\n", k, v)
-	}
+	// for k, v := range sourceMap {
+	// fmt.Printf("[%s] : %d\n", k, v)
+	// }
 	waitgroup.Done()
 	return sourceMap
+}
+
+func renderTheHistogram(mapChan chan map[string]int, waitgroup *sync.WaitGroup) {
+	keyItems := []string{}
+	valueItems := []int{}
+	for m := range mapChan {
+		for k, v := range m {
+			keyItems = append(keyItems, k)
+			valueItems = append(valueItems, v)
+		}
+
+		bar := charts.NewBar()
+		bar.SetSeriesOptions(
+			charts.BarOpts{BarCategoryGap: "170%"})
+		bar.SetGlobalOptions(
+			charts.TitleOpts{Title: "For infowatch", Right: "80%"},
+			charts.InitOpts{Width: "1900px", Height: "900px"},
+		)
+		bar.AddXAxis(keyItems).
+			AddYAxis("Symbols", valueItems,
+				charts.ColorOpts{"lightblue"})
+		f, err := os.Create("bar.html")
+		if err != nil {
+			log.Println(err)
+		}
+		bar.Render(f)
+		fmt.Println("The chart was rendered")
+		os.Exit(0)
+	}
+	waitgroup.Done()
 }
 
 func main() {
 
 	fileChan := make(chan string, 100)
 	lineChan := make(chan string, 100)
+	mapChan := make(chan map[string]int, 100)
 
 	var waitgroup sync.WaitGroup
 
@@ -105,8 +130,9 @@ func main() {
 		panic(err)
 	}
 
-	waitgroup.Add(2)
+	waitgroup.Add(3)
 	go readFile(fileChan, lineChan, &waitgroup)
-	go sortChars(lineChan, &waitgroup)
+	go sortChars(lineChan, mapChan, &waitgroup)
+	go renderTheHistogram(mapChan, &waitgroup)
 	waitgroup.Wait()
 }

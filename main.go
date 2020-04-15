@@ -13,6 +13,7 @@ import (
 	"github.com/chenjiandongx/go-echarts/charts"
 )
 
+// Read and send to channel
 func filePathWalkDir(root string, c chan string) error {
 	err := filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
 		if !info.IsDir() {
@@ -24,7 +25,9 @@ func filePathWalkDir(root string, c chan string) error {
 	return err
 }
 
+// TODO: Fan-out: create a lot of go-routines which read from one channel
 func readFile(c chan string, l chan string, waitgroup *sync.WaitGroup) {
+	// где-то тут нужно взять len входящего канала с путями к файлам и налодить по одному каналу на каждый
 	var lines []string
 	for i := range c {
 		file, err := os.Open(i)
@@ -46,6 +49,7 @@ func readFile(c chan string, l chan string, waitgroup *sync.WaitGroup) {
 	waitgroup.Done()
 }
 
+// TODO: Fan-in: finction which read from a lot of channel and multiplex in one channel
 func sortChars(l chan string, m chan map[string]int, waitgroup *sync.WaitGroup) map[string]int {
 	sourceMap := make(map[string]int)
 	for i := range l {
@@ -124,7 +128,7 @@ func main() {
 		log.Fatal("No path given, Please specify path.")
 		return
 	}
-
+	// Collect filepath and send to channel
 	err := filePathWalkDir(root, fileChan)
 	if err != nil {
 		panic(err)
